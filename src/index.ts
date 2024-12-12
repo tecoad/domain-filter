@@ -1,10 +1,13 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import type { Env } from './types';
 import { fetchDomains, filterDomains, processDomainsWithAI } from './utils';
 
-const app = new Hono<{ Bindings: Env }>()
+type Bindings = {
+  ANTHROPIC_API_KEY: string;
+}
+
+const app = new Hono<{ Bindings: Bindings }>()
 
 export const querySchema = z.object({
   url: z.string().url(),
@@ -17,7 +20,7 @@ app.get("/", zValidator("query", querySchema), async (c) => {
 
    try {
     const { url, batchSize, limit } = c.req.valid("query");
-    
+
     // URL decode the parameter (URL validation already done by Zod)
     const decodedUrl = new URL(decodeURIComponent(url)).toString();
 
@@ -33,15 +36,35 @@ app.get("/", zValidator("query", querySchema), async (c) => {
     }
 
     // Process domains with AI in batches
-    const processedDomains = await processDomainsWithAI(filteredDomains, batchSize);
+    const selectedByIA = await processDomainsWithAI(c, filteredDomains, batchSize);
+
+    // Group domains by score and sort by length
+    const groupedDomains = selectedByIA.reduce((acc: Record<number, string[]>, domain) => {
+      const score = domain.score;
+      if (!acc[score]) {
+        acc[score] = [];
+      }
+      acc[score].push(domain.domain);
+      return acc;
+    }, {});
+
+    // Sort domains within each score group by length
+    Object.keys(groupedDomains).forEach(score => {
+      groupedDomains[Number(score)].sort((a, b) => a.length - b.length);
+    });
+
+    // Sort scores in descending order (highest score first)
+    const sortedGroupedDomains = Object.fromEntries(
+      Object.entries(groupedDomains)
+        .sort(([scoreA], [scoreB]) => Number(scoreB) - Number(scoreA))
+    );
 
     return c.json({
-      success: true,
-      domains: processedDomains,
+      domains: sortedGroupedDomains,
       metadata: {
-        originalCount: domains.length,
+        listCount: domains.length,
         filteredCount: filteredDomains.length,
-        processedCount: processedDomains.length,
+        selectedByIACount: selectedByIA.length,
         batchSize,
         limit: limit || 'unlimited'
       }

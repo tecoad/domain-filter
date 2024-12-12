@@ -1,5 +1,6 @@
-import { anthropic } from "@ai-sdk/anthropic";
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateObject } from 'ai';
+import { Context } from "hono";
 import { z } from 'zod';
 
 const VALID_TLD = '.com.br';
@@ -36,7 +37,16 @@ export function filterDomains(domains: string[]): string[] {
     .sort(sortByLength);
 }
 
-export async function processDomainsWithAI(domains: string[], batchSize: number = 300): Promise<string[]> {
+export type DomainWithScore = {
+  domain: string;
+  score: number;
+};
+
+export async function processDomainsWithAI(
+  c: Context, 
+  domains: string[], 
+  batchSize: number = 300
+): Promise<DomainWithScore[]> {
   const batches = Array.from(
     { length: Math.ceil(domains.length / batchSize) },
     (_, i) => domains.slice(i * batchSize, (i + 1) * batchSize)
@@ -46,9 +56,13 @@ export async function processDomainsWithAI(domains: string[], batchSize: number 
     selectedDomains: z.array(
       z.object({
         domain: z.string(),
-        // score: z.number().min(1).max(10),
+        score: z.number().min(1).max(5),
       })
     )
+  });
+
+  const anthropic = createAnthropic({
+    apiKey: c.env.ANTHROPIC_API_KEY,
   });
 
   const processedBatches = await Promise.all(
@@ -56,14 +70,14 @@ export async function processDomainsWithAI(domains: string[], batchSize: number 
       const result = await generateObject({
         model: anthropic("claude-3-sonnet-20240229"),
         system: 'You are a domain name expert who analyzes and selects the best domain names based on memorability, brandability, professional sound, and marketing potential.',
-        prompt: `You will be provided with a list of domain names. Your task is to analyze each domain and select the ones that are better and more brandable. Here's how to proceed:
+        prompt: `You will be provided with a list of domain names. Your task is to analyze each domain and assign a score from 1-5 (5 being the best) based on their potential. Here's how to proceed:
 
         1. Review the following list of domain names:
         <domain_list>
         ${batch.join('\n')}
         </domain_list>
 
-        2. When evaluating each domain, consider the following criteria:
+        2. When evaluating each domain, consider the following criteria and assign a score (1-5):
           - Memorability: Is it easy to remember?
           - Uniqueness: Does it stand out from other domain names?
           - Relevance: Could it be associated with a brand or business?
@@ -73,27 +87,22 @@ export async function processDomainsWithAI(domains: string[], batchSize: number 
 
         3. Analyze every single domain name in the list. Do not skip any names.
 
-        4. Create a list of the domain names that you consider better and more brandable based on the criteria above.
+        4. For each domain, provide:
+           - The domain name
+           - A score from 1-5 (5 being excellent, 1 being poor)
 
-        5. It is crucial that you evaluate all domain names provided. Do not overlook any name in your analysis.
+        5. It is crucial that you evaluate all domain names provided.
 
-        6. Present your final selection as a simple list of domain names. Do not provide any explanations or justifications for your choices.
-
-        Output your list of selected domain names within <selected_domains> tags. Each domain name should be on a new line.
-
-        Remember, your task is to analyze all domains thoroughly and return only the list of better, more brandable domain names without any additional commentary.
-
+        Remember to return the data in the exact format specified by the schema.
         `,
         schema
       });
 
-      return result.object.selectedDomains
-        // .sort((a, b) => b.score - a.score)
-        .map(item => item.domain);
+      return result.object.selectedDomains;
     })
   );
 
-  return processedBatches.flat().sort(sortByLength);
+  return processedBatches.flat();
 }
 
 
