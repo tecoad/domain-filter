@@ -3,6 +3,19 @@ import { generateObject } from "ai";
 import type { Context } from "hono";
 import { z } from "zod";
 
+export type ProcessedDomainListResult = {
+	domains: {
+		[score: number]: string[];
+	};
+	metadata: {
+		listCount: number;
+		filteredCount: number;
+		selectedByIACount: number;
+		batchSize: number;
+		limit: number | "unlimited";
+	};
+};
+
 const VALID_TLD = ".com.br";
 
 // Helper function to get domain length without TLD
@@ -106,4 +119,71 @@ export async function processDomainsWithAI(
 	);
 
 	return processedBatches.flat();
+}
+
+export async function processDomainList(
+	c: Context,
+	{
+		url = "https://registro.br/dominio/lista-competicao.txt",
+		batchSize = 500,
+		limit = undefined,
+	}: {
+		url?: string;
+		batchSize?: number;
+		limit?: number;
+	},
+): Promise<ProcessedDomainListResult> {
+	// Fetch domains from URL
+	const domains = await fetchDomains(url);
+
+	// Filter and sort domains
+	let filteredDomains = filterDomains(domains);
+
+	// Apply limit if specified
+	if (limit !== undefined) {
+		filteredDomains = filteredDomains.slice(0, limit);
+	}
+
+	// Process domains with AI in batches
+	const selectedByIA = await processDomainsWithAI(
+		c,
+		filteredDomains,
+		batchSize,
+	);
+
+	// Group domains by score and sort by length
+	const groupedDomains = selectedByIA.reduce(
+		(acc: Record<number, string[]>, domain) => {
+			const score = domain.score;
+			if (!acc[score]) {
+				acc[score] = [];
+			}
+			acc[score].push(domain.domain);
+			return acc;
+		},
+		{},
+	);
+
+	// Sort domains within each score group by length
+	for (const score of Object.keys(groupedDomains)) {
+		groupedDomains[Number(score)].sort((a, b) => a.length - b.length);
+	}
+
+	// Sort scores in descending order
+	const sortedGroupedDomains = Object.fromEntries(
+		Object.entries(groupedDomains).sort(
+			([scoreA], [scoreB]) => Number(scoreB) - Number(scoreA),
+		),
+	);
+
+	return {
+		domains: sortedGroupedDomains,
+		metadata: {
+			listCount: domains.length,
+			filteredCount: filteredDomains.length,
+			selectedByIACount: selectedByIA.length,
+			batchSize,
+			limit: limit || "unlimited",
+		},
+	};
 }

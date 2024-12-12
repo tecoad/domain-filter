@@ -2,19 +2,13 @@
 
 import { render } from "@react-email/components";
 import type { Context } from "hono";
+import type { ProcessedDomainListResult } from "./process-list";
+import { EmailResults } from "./template";
 
-function EmailTemplate() {
-	return (
-		<div>
-			<h1>Welcome, !</h1>
-			<p>Thanks for trying. We’re thrilled to have you on board.</p>
-		</div>
-	);
-}
-
-export const sendEmail = async (
+export const sendResultsEmail = async (
 	c: Context,
 	to: string,
+	data: ProcessedDomainListResult,
 ): Promise<string | undefined> => {
 	// const resend = new Resend(c.env.RESEND_API_KEY);
 	// const res = await resend.emails.send({
@@ -25,7 +19,7 @@ export const sendEmail = async (
 	// });
 	// return res.data?.id;
 
-	const html = await render(<EmailTemplate />);
+	const html = await render(<EmailResults data={data} />);
 
 	const res = await fetch("https://api.resend.com/emails", {
 		method: "POST",
