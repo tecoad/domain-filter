@@ -6,6 +6,7 @@ import { sendResultsEmail } from "./resend";
 
 type Bindings = {
 	ANTHROPIC_API_KEY: string;
+	CRON_URL: string;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -30,7 +31,7 @@ app.get("/trigger", zValidator("query", automateSchema), async (c) => {
 	try {
 		const { to } = c.req.valid("query");
 		// Process domains with default parameters
-		const result = await processDomainList(c, { limit: 25, batchSize: 10 });
+		const result = await processDomainList(c, { limit: 5000, batchSize: 500 });
 		// Send email with the results
 		await sendResultsEmail(c, to, result);
 
@@ -78,4 +79,12 @@ app.get("/", zValidator("query", querySchema), async (c) => {
 	}
 });
 
-export default app;
+export default {
+	fetch: app.fetch,
+	scheduled: async (env: Bindings) => {
+		const response = await fetch(env.CRON_URL);
+		if (!response.ok) {
+			console.error("Scheduled trigger failed:", await response.text());
+		}
+	},
+};

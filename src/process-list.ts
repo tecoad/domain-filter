@@ -56,15 +56,27 @@ export type DomainWithScore = {
 	domain: string;
 	score: number;
 };
-
 export async function processDomainsWithAI(
 	c: Context,
 	domains: string[],
-	batchSize = 300,
+	batchSize = 500,
+	concurrentLimit = 3, // Control how many parallel requests we allow
 ): Promise<DomainWithScore[]> {
+	const TOKENS_PER_DOMAIN = 10; // Approximate tokens per domain in output
+	const OUTPUT_TOKENS_PER_MINUTE = 8000;
+	const INPUT_TOKENS_PER_MINUTE = 40000;
+
+	const domainsPerMinute = Math.floor(
+		OUTPUT_TOKENS_PER_MINUTE / TOKENS_PER_DOMAIN,
+	);
+	const adjustedBatchSize = Math.min(
+		batchSize,
+		Math.floor(domainsPerMinute / concurrentLimit),
+	);
+
 	const batches = Array.from(
-		{ length: Math.ceil(domains.length / batchSize) },
-		(_, i) => domains.slice(i * batchSize, (i + 1) * batchSize),
+		{ length: Math.ceil(domains.length / adjustedBatchSize) },
+		(_, i) => domains.slice(i * adjustedBatchSize, (i + 1) * adjustedBatchSize),
 	);
 
 	const schema = z.object({
@@ -80,52 +92,71 @@ export async function processDomainsWithAI(
 		apiKey: c.env.ANTHROPIC_API_KEY,
 	});
 
-	const processedBatches = await Promise.all(
-		batches.map(async (batch) => {
-			const result = await generateObject({
-				model: anthropic("claude-3-sonnet-20240229"),
-				system:
-					"You are a domain name expert who analyzes and selects the best domain names based on memorability, brandability, professional sound, and marketing potential.",
-				prompt: `You will be provided with a list of domain names. Your task is to analyze each domain and assign a score from 1-5 (5 being the best) based on their potential. Here's how to proceed:
+	// Process batches with controlled concurrency
+	const processedBatches: DomainWithScore[] = [];
 
-        1. Review the following list of domain names:
-        <domain_list>
-        ${batch.join("\n")}
-        </domain_list>
+	// Process batches with rate limiting
+	for (let i = 0; i < batches.length; i += concurrentLimit) {
+		const batchGroup = batches.slice(i, i + concurrentLimit);
+		const results = await Promise.all(
+			batchGroup.map(async (batch) => {
+				try {
+					const result = await generateObject({
+						model: anthropic("claude-3-sonnet-20240229"),
+						system:
+							"You are a domain name expert who analyzes and selects the best domain names based on memorability, brandability, professional sound, and marketing potential.",
+						prompt: `You will be provided with a list of domain names. Your task is to analyze each domain and assign a score from 1-5 (5 being the best) based on their potential. Here's how to proceed:
+		
+						1. Review the following list of domain names:
+						<domain_list>
+						${batch.join("\n")}
+						</domain_list>
+		
+						2. When evaluating each domain, consider the following criteria and assign a score (1-5):
+							- Memorability: Is it easy to remember?
+							- Uniqueness: Does it stand out from other domain names?
+							- Relevance: Could it be associated with a brand or business?
+							- Length: Is it concise without being too short?
+							- Pronunciation: Is it easy to say out loud?
+							- Spelling: Is it easy to spell correctly?
+		
+						3. Analyze every single domain name in the list. Do not skip any names.
+		
+						4. For each domain, provide:
+							 - The domain name
+							 - A score from 1-5 (5 being excellent, 1 being poor)
+		
+						5. It is crucial that you evaluate all domain names provided.
+		
+						Remember to return the data in the exact format specified by the schema.
+						`,
+						schema,
+					});
+					return result.object.selectedDomains;
+				} catch (error) {
+					console.error(">>>>>>>>> Error processing batch:", error);
+					return [];
+				}
+			}),
+		);
 
-        2. When evaluating each domain, consider the following criteria and assign a score (1-5):
-          - Memorability: Is it easy to remember?
-          - Uniqueness: Does it stand out from other domain names?
-          - Relevance: Could it be associated with a brand or business?
-          - Length: Is it concise without being too short?
-          - Pronunciation: Is it easy to say out loud?
-          - Spelling: Is it easy to spell correctly?
+		processedBatches.push(...results.flat());
 
-        3. Analyze every single domain name in the list. Do not skip any names.
+		// Force wait for a minute between batch groups to respect rate limits
+		if (i + concurrentLimit < batches.length) {
+			console.log("Rate limit pause - waiting 60 seconds before next batch...");
+			await new Promise((resolve) => setTimeout(resolve, 60000));
+		}
+	}
 
-        4. For each domain, provide:
-           - The domain name
-           - A score from 1-5 (5 being excellent, 1 being poor)
-
-        5. It is crucial that you evaluate all domain names provided.
-
-        Remember to return the data in the exact format specified by the schema.
-        `,
-				schema,
-			});
-
-			return result.object.selectedDomains;
-		}),
-	);
-
-	return processedBatches.flat();
+	return processedBatches;
 }
 
 export async function processDomainList(
 	c: Context,
 	{
-		url = "https://registro.br/dominio/lista-competicao.txt",
-		batchSize = 500,
+		url = c.env.REGISTROBR_TXT_URL,
+		batchSize = 400,
 		limit = undefined,
 	}: {
 		url?: string;

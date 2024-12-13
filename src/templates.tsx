@@ -12,34 +12,46 @@ import {
 } from "@react-email/components";
 import type { ProcessedDomainListResult } from "./process-list";
 
-export const EmailResults = ({ data }: { data: ProcessedDomainListResult }) => (
+const Layout = ({ children }: { children: React.ReactNode }) => (
 	<Html>
 		<Head />
 		<Preview>Domain Registration Recommendations</Preview>
 		<Body style={main}>
 			<Container style={container}>
 				<Heading style={h1}>Hi there!</Heading>
-				<Text style={heroText}>Here are the domains you need to register:</Text>
-
-				<Section style={codeBox}>
-					{Object.entries(data.domains)
-						.sort(([scoreA], [scoreB]) => Number(scoreB) - Number(scoreA))
-						.map(([score, domains]) => (
-							<div key={score} style={scoreSection}>
-								<Text style={scoreText}>Score: {score}</Text>
-								<ul style={domainList}>
-									{domains.map((domain) => (
-										<li key={domain} style={domainItem}>
-											{domain}
-										</li>
-									))}
-								</ul>
-							</div>
-						))}
-				</Section>
+				{children}
 			</Container>
 		</Body>
 	</Html>
+);
+
+export const EmailResults = ({ data }: { data: ProcessedDomainListResult }) => (
+	<Layout>
+		<Text style={heroText}>Here are the domains you need to register:</Text>
+		<Section style={codeBox}>
+			{Object.entries(data.domains)
+				.sort(([scoreA], [scoreB]) => Number(scoreB) - Number(scoreA))
+				.map(([score, domains]) => (
+					<div key={score} style={scoreSection}>
+						<Text style={scoreText}>Score: {score}</Text>
+						<ul style={domainList}>
+							{domains.map((domain) => (
+								<li key={domain} style={domainItem}>
+									{domain}
+								</li>
+							))}
+						</ul>
+					</div>
+				))}
+		</Section>
+	</Layout>
+);
+
+export const EmailError = ({ error }: { error: string }) => (
+	<Layout>
+		<Text style={heroText}>There was an error processing domain routine:</Text>
+		<Section style={codeBox}>{error}</Section>
+	</Layout>
 );
 
 const main = {

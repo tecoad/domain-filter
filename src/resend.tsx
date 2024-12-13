@@ -3,24 +3,14 @@
 import { render } from "@react-email/components";
 import type { Context } from "hono";
 import type { ProcessedDomainListResult } from "./process-list";
-import { EmailResults } from "./template";
+import { EmailError, EmailResults } from "./templates";
 
-export const sendResultsEmail = async (
+const sendEmail = async (
 	c: Context,
 	to: string,
-	data: ProcessedDomainListResult,
+	subject: string,
+	html: string,
 ): Promise<string | undefined> => {
-	// const resend = new Resend(c.env.RESEND_API_KEY);
-	// const res = await resend.emails.send({
-	// 	from: `${c.env.RESEND_FROM_NAME} <${c.env.RESEND_FROM_EMAIL}>`,
-	// 	to,
-	// 	subject: "[ACTION NEEDED]: Register these domains",
-	// 	react: <EmailTemplate />,
-	// });
-	// return res.data?.id;
-
-	const html = await render(<EmailResults data={data} />);
-
 	const res = await fetch("https://api.resend.com/emails", {
 		method: "POST",
 		headers: {
@@ -29,11 +19,30 @@ export const sendResultsEmail = async (
 		},
 		body: JSON.stringify({
 			from: `${c.env.RESEND_FROM_NAME} <${c.env.RESEND_FROM_EMAIL}>`,
-			to: to,
-			subject: `[Important]: Register these domains - ${new Date().toLocaleString("en-US", { month: "long" })} ${new Date().getFullYear()}`,
-			html: html,
+			to,
+			subject,
+			html,
 		}),
 	});
 
 	return res.json();
+};
+
+export const sendErrorEmail = async (
+	c: Context,
+	to: string,
+	error: string,
+): Promise<string | undefined> => {
+	const html = await render(<EmailError error={error} />);
+	return sendEmail(c, to, "Error Report", html);
+};
+
+export const sendResultsEmail = async (
+	c: Context,
+	to: string,
+	data: ProcessedDomainListResult,
+): Promise<string | undefined> => {
+	const html = await render(<EmailResults data={data} />);
+	const subject = `[Important]: Register these domains - ${new Date().toLocaleString("en-US", { month: "long" })} ${new Date().getFullYear()}`;
+	return sendEmail(c, to, subject, html);
 };

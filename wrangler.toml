@@ -4,8 +4,7 @@ compatibility_date = "2024-12-12"
 
 # compatibility_flags = [ "nodejs_compat" ]
 
-# [vars]
-# MY_VAR = "my-variable"
+
 
 # [[kv_namespaces]]
 # binding = "MY_KV_NAMESPACE"
@@ -27,6 +26,17 @@ compatibility_date = "2024-12-12"
 # enabled = true
 # head_sampling_rate = 1
 
+workers_dev = false
+
+routes = [
+  { pattern = "domain-filter.teco.im", custom_domain = true }
+]
+
 [vars]
-# For development only - use secrets for sensitive values in production
-ANTHROPIC_API_KEY = "your-api-key"
+RESEND_FROM_EMAIL='noreply@zapcal.ai'
+RESEND_FROM_NAME='Domain MS'
+REGISTROBR_TXT_URL='https://registro.br/dominio/lista-processo-liberacao.txt'
+CRON_URL = "https://domain-filter.teco.im/trigger?to=tecoad@gmail.com"
+
+[triggers]
+crons = [ "0 12 10 * *" ]
