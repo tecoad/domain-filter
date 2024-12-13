@@ -81,7 +81,11 @@ app.get("/", zValidator("query", querySchema), async (c) => {
 
 export default {
 	fetch: app.fetch,
-	scheduled: async (env: Bindings) => {
+	scheduled: async (
+		event: ScheduledEvent,
+		env: Bindings,
+		ctx: ExecutionContext,
+	) => {
 		const response = await fetch(env.CRON_URL);
 		if (!response.ok) {
 			console.error("Scheduled trigger failed:", await response.text());
