@@ -2,8 +2,20 @@
 
 import { render } from "@react-email/components";
 import type { Context } from "hono";
-import type { ProcessedDomainListResult } from "./process-list";
 import { EmailError, EmailResults } from "./templates";
+
+type ProcessedDomainListResult = {
+	domains: {
+		[score: number]: string[];
+	};
+	metadata: {
+		listCount: number;
+		filteredCount: number;
+		selectedByIACount: number;
+		batchSize: number;
+		limit: number | "unlimited";
+	};
+};
 
 const sendEmail = async (
 	c: Context,
@@ -39,10 +51,9 @@ export const sendErrorEmail = async (
 
 export const sendResultsEmail = async (
 	c: Context,
-	to: string,
 	data: ProcessedDomainListResult,
 ): Promise<string | undefined> => {
 	const html = await render(<EmailResults data={data} />);
 	const subject = `[Important]: Register these domains - ${new Date().toLocaleString("en-US", { month: "long" })} ${new Date().getFullYear()}`;
-	return sendEmail(c, to, subject, html);
+	return sendEmail(c, "tecoad@gmail.com", subject, html);
 };

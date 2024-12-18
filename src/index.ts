@@ -1,43 +1,31 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
-import { processDomainList } from "./process-list";
-import { sendResultsEmail } from "./resend";
+import { fetchDomains } from "./fetch-domains";
+import { filterDomains } from "./filter-domains";
+import { sendClaude } from "./send-claude";
+import { sendClaudeBatch } from "./send-claude-batch";
 
 type Bindings = {
 	ANTHROPIC_API_KEY: string;
-	CRON_URL: string;
+	REGISTROBR_TXT_URL: string;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
 
-export const querySchema = z.object({
-	url: z.string().url(),
-	batchSize: z
-		.string()
-		.default("500")
-		.transform((val) => Number.parseInt(val)),
-	limit: z
-		.string()
-		.optional()
-		.transform((val) => (val ? Number.parseInt(val) : undefined)),
-});
-
-const automateSchema = z.object({
-	to: z.string().email(),
-});
-
-app.get("/trigger", zValidator("query", automateSchema), async (c) => {
+app.get("/process-all", async (c) => {
 	try {
-		const { to } = c.req.valid("query");
-		// Process domains with default parameters
-		const result = await processDomainList(c, { limit: 5000, batchSize: 500 });
-		// Send email with the results
-		await sendResultsEmail(c, to, result);
+		const domains = await fetchDomains(c.env.REGISTROBR_TXT_URL);
+
+		// Filter and sort domains
+		const filteredDomains = filterDomains(domains);
+
+		const batchId = await sendClaudeBatch(c, filteredDomains);
 
 		return c.json({
-			message: "Email sent successfully",
-			metadata: result.metadata,
+			message: "Batch sent successfully",
+			batchId,
 		});
 	} catch (error: unknown) {
 		console.error("Error in automation:", error);
@@ -45,7 +33,7 @@ app.get("/trigger", zValidator("query", automateSchema), async (c) => {
 			error instanceof Error ? error.message : "Unknown error occurred";
 		return c.json(
 			{
-				error: "Failed to process automation",
+				error: "Failed to process batch",
 				message: errorMessage,
 			},
 			500,
@@ -53,42 +41,45 @@ app.get("/trigger", zValidator("query", automateSchema), async (c) => {
 	}
 });
 
-app.get("/", zValidator("query", querySchema), async (c) => {
+app.get("/list-batches", async (c) => {
+	const anthropic = new Anthropic({
+		apiKey: c.env.ANTHROPIC_API_KEY,
+	});
+	const results = await anthropic.messages.batches.list();
+	return c.json(results);
+});
+
+const pageSchema = z.object({
+	page: z.coerce.number().min(1),
+});
+
+app.get("/process-page", zValidator("query", pageSchema), async (c) => {
 	try {
-		const { url, batchSize, limit } = c.req.valid("query");
-		const decodedUrl = new URL(decodeURIComponent(url)).toString();
+		const { page } = c.req.valid("query");
+		const PAGE_SIZE = 500;
+		const startIndex = (page - 1) * PAGE_SIZE;
+		const endIndex = startIndex + PAGE_SIZE;
 
-		const result = await processDomainList(c, {
-			url: decodedUrl,
-			batchSize,
-			limit,
+		const domains = await fetchDomains(c.env.REGISTROBR_TXT_URL);
+		const filteredDomains = filterDomains(domains);
+		const paginatedDomains = filteredDomains.slice(startIndex, endIndex);
+
+		const results = await sendClaude(c, paginatedDomains);
+
+		return c.json({
+			message: "Selected domains by AI:",
+			results,
 		});
-
-		return c.json(result);
 	} catch (error: unknown) {
-		console.error("Error processing domains:", error);
-		const errorMessage =
-			error instanceof Error ? error.message : "Unknown error occurred";
+		console.error("Error in automation:", error);
 		return c.json(
 			{
-				error: "Failed to process domains",
-				message: errorMessage,
+				error: "Failed to process batch",
+				message: error,
 			},
 			500,
 		);
 	}
 });
 
-export default {
-	fetch: app.fetch,
-	scheduled: async (
-		event: ScheduledEvent,
-		env: Bindings,
-		ctx: ExecutionContext,
-	) => {
-		const response = await fetch(env.CRON_URL);
-		if (!response.ok) {
-			console.error("Scheduled trigger failed:", await response.text());
-		}
-	},
-};
+export default app;

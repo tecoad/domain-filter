@@ -36,7 +36,7 @@ routes = [
 RESEND_FROM_EMAIL='noreply@zapcal.ai'
 RESEND_FROM_NAME='Domain MS'
 REGISTROBR_TXT_URL='https://registro.br/dominio/lista-processo-liberacao.txt'
-CRON_URL = "https://domain-filter.teco.im/trigger?to=tecoad@gmail.com"
 
-[triggers]
-crons = [ "0 12 13 * *" ]
+
+[observability.logs]
+enabled = true

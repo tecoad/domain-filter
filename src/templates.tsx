@@ -10,7 +10,7 @@ import {
 	Section,
 	Text,
 } from "@react-email/components";
-import type { ProcessedDomainListResult } from "./process-list";
+import type { ProcessedDomainListResult } from "./send-claude-batch";
 
 const Layout = ({ children }: { children: React.ReactNode }) => (
 	<Html>
